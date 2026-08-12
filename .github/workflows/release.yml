@@ -1,0 +1,139 @@
+name: Release
+
+# Publishing a GitHub Release tagged v<version> builds the artifacts FROM
+# SOURCE with the pinned toolchain, packages them, and attaches them to that
+# release:
+#
+#   libid-circuits-<version>-<circuit>.tar.gz   one per circuit, containing
+#                                               <package>.json, vk, vk_hash
+#   manifest.json                               version, toolchain pins, and
+#                                               sha256 of every tarball and
+#                                               every file inside them
+#
+# Nothing prebuilt is shipped: artifacts are never committed to this repo,
+# and this workflow is the only path that produces release assets. The build
+# is deterministic in the pinned toolchain (scripts/build.sh normalizes the
+# machine-specific paths nargo embeds), so a re-run reproduces the same
+# bytes.
+#
+# Consumers (libid-contracts' `verifiers` CI job) download the tarballs by
+# pinned tag, check them against the manifest's sha256s, and regenerate their
+# Solidity verifiers from the vks with the bb version the manifest names.
+#
+# Every third-party action is pinned by commit SHA, with the tag in a
+# comment, so a moved tag cannot change what executes.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  # softprops/action-gh-release uploads assets to the triggering release.
+  contents: write
+
+jobs:
+  publish-artifacts:
+    name: Build, package and upload artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read toolchain pins
+        run: cat toolchain.env | grep -E '^(NARGO|BB)_VERSION=' >> "$GITHUB_ENV"
+
+      # Same cache + install steps as ci.yml, same key — a release run on a
+      # warm cache installs nothing.
+      - name: Cache Noir toolchains
+        id: noir-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.nargo
+            ~/.bb
+          key: noir-${{ runner.os }}-nargo-${{ env.NARGO_VERSION }}-bb-${{ env.BB_VERSION }}
+
+      - name: Install nargo (pinned)
+        if: steps.noir-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
+          export PATH="$HOME/.nargo/bin:$PATH"
+          noirup --version "${NARGO_VERSION}"
+          nargo --version
+
+      - name: Install barretenberg (pinned)
+        if: steps.noir-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -L https://raw.githubusercontent.com/AztecProtocol/aztec-packages/master/barretenberg/bbup/install | bash
+          export PATH="$HOME/.bb:$PATH"
+          bbup --version "${BB_VERSION}"
+          bb --version
+
+      - name: Put Noir toolchains on PATH
+        run: |
+          set -euo pipefail
+          echo "$HOME/.nargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.bb" >> "$GITHUB_PATH"
+
+      - name: Verify pinned toolchain versions
+        run: |
+          set -euo pipefail
+          nargo --version | grep -qF "nargo version = ${NARGO_VERSION}"
+          [ "$(bb --version | tail -1)" = "${BB_VERSION}" ]
+
+      # The build.sh toolchain gate re-checks the versions; a runner with the
+      # wrong toolchain fails here instead of shipping wrong bytes.
+      - name: Build artifacts from source
+        run: ./scripts/build.sh --out artifacts
+
+      - name: Package tarballs and manifest
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          mkdir -p dist
+
+          manifest_files="{}"
+          for dir in artifacts/*/; do
+            circuit="$(basename "$dir")"
+            tarball="libid-circuits-${version}-${circuit}.tar.gz"
+            # Deterministic-ish tar: sorted names, no timestamps in gzip.
+            tar --sort=name --owner=0 --group=0 --numeric-owner \
+              --mtime='UTC 2020-01-01' \
+              -C "$dir" -cf - . | gzip -n > "dist/$tarball"
+
+            # sha256 of the tarball and of every file inside it.
+            tar_sha="$(sha256sum "dist/$tarball" | cut -d' ' -f1)"
+            inner="{}"
+            for f in "$dir"*; do
+              fname="$(basename "$f")"
+              fsha="$(sha256sum "$f" | cut -d' ' -f1)"
+              inner="$(jq --arg k "$fname" --arg v "$fsha" '. + {($k): $v}' <<<"$inner")"
+            done
+            manifest_files="$(jq \
+              --arg k "$tarball" --arg sha "$tar_sha" --argjson files "$inner" \
+              '. + {($k): {sha256: $sha, files: $files}}' <<<"$manifest_files")"
+          done
+
+          jq -n \
+            --arg version "$version" \
+            --arg tag "$TAG" \
+            --arg nargo "$NARGO_VERSION" \
+            --arg bb "$BB_VERSION" \
+            --argjson tarballs "$manifest_files" \
+            '{version: $version, tag: $tag,
+              toolchain: {nargo: $nargo, bb: $bb},
+              tarballs: $tarballs}' > dist/manifest.json
+
+          cat dist/manifest.json
+          ls -la dist/
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          files: |
+            dist/libid-circuits-*.tar.gz
+            dist/manifest.json

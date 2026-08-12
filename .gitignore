@@ -1,0 +1,6 @@
+# nargo build output: machine-specific intermediates.
+circuits/*/target/
+# Local build output of scripts/build.sh. Artifacts are never committed —
+# they ship exclusively as release assets, rebuilt from source by the
+# release workflow under the pinned toolchain.
+artifacts/

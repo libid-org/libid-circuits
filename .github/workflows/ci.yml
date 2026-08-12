@@ -1,0 +1,176 @@
+name: CI
+
+# Two jobs. `circuits` proves that the committed sources build under the
+# pinned toolchain: tests pass, both circuits compile, and every vk
+# generates. Nothing built here is kept — artifacts are never committed and
+# ship exclusively as release assets, rebuilt from source by release.yml.
+# `dco` checks the Signed-off-by trailer CONTRIBUTING.md promises.
+#
+# Every third-party action is pinned by commit SHA, with the tag in a
+# comment, so a moved tag cannot change what executes.
+#
+# Network note: `nargo compile` fetches the git dependencies declared in each
+# Nargo.toml (github.com/zkpassport, github.com/noir-lang) on a cold cache.
+# The versions are tag-pinned in Nargo.toml, and the fetched tree is part of
+# the cached ~/.nargo, so a warm cache compiles without touching the network.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  # Superseded pushes stop burning minutes immediately.
+  group: ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Circuits: pinned toolchain, tests, full artifact build.
+  # ---------------------------------------------------------------------------
+  circuits:
+    name: Circuits
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # toolchain.env is the single source of truth for the pins; export it
+      # so the cache key and the install steps can never disagree with it.
+      - name: Read toolchain pins
+        run: cat toolchain.env | grep -E '^(NARGO|BB)_VERSION=' >> "$GITHUB_ENV"
+
+      # nargo and bb are ~hundreds of MB and are re-downloaded on every run
+      # otherwise. Keyed on BOTH pinned versions, so a bump in toolchain.env
+      # invalidates the cache automatically rather than silently reusing the
+      # wrong toolchain — which would silently change what release.yml would
+      # later build from the same cache.
+      - name: Cache Noir toolchains
+        id: noir-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.nargo
+            ~/.bb
+          key: noir-${{ runner.os }}-nargo-${{ env.NARGO_VERSION }}-bb-${{ env.BB_VERSION }}
+
+      - name: Install nargo (pinned)
+        if: steps.noir-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
+          export PATH="$HOME/.nargo/bin:$PATH"
+          noirup --version "${NARGO_VERSION}"
+          nargo --version
+
+      - name: Install barretenberg (pinned)
+        if: steps.noir-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -L https://raw.githubusercontent.com/AztecProtocol/aztec-packages/master/barretenberg/bbup/install | bash
+          export PATH="$HOME/.bb:$PATH"
+          bbup --version "${BB_VERSION}"
+          bb --version
+
+      # The install steps above put nothing on the persistent PATH, and are
+      # skipped entirely on a cache hit — so do it unconditionally here.
+      - name: Put Noir toolchains on PATH
+        run: |
+          set -euo pipefail
+          echo "$HOME/.nargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.bb" >> "$GITHUB_PATH"
+
+      - name: Verify pinned toolchain versions
+        run: |
+          set -euo pipefail
+          nargo --version | grep -qF "nargo version = ${NARGO_VERSION}"
+          [ "$(bb --version | tail -1)" = "${BB_VERSION}" ]
+
+      # NO `nargo fmt --check`, deliberately. The sources are byte-verbatim
+      # copies of dyaka's circuits (the provenance the README documents), and
+      # they are not fmt-clean under this nargo. Reformatting was verified to
+      # leave the compiled ACIR bytecode identical (only debug metadata
+      # moves), so a future PR may run `nargo fmt`, commit the result, and
+      # enable the check here — as one deliberate change, not a silent
+      # divergence from the source of truth.
+
+      # jwt_email has no tests and passes vacuously; dyaka_noir_token has 9.
+      - name: nargo test
+        run: |
+          set -euo pipefail
+          for dir in circuits/*/; do
+            echo "==> $dir"
+            (cd "$dir" && nargo test)
+          done
+
+      # Full build: proves both circuits compile and every vk generates with
+      # the pinned toolchain — the exact path release.yml runs to produce the
+      # release assets. The output is discarded; artifacts only ever ship
+      # from a release build.
+      - name: Build artifacts (discarded)
+        run: |
+          set -euo pipefail
+          ./scripts/build.sh --out "$RUNNER_TEMP/artifacts"
+          find "$RUNNER_TEMP/artifacts" -type f -exec sha256sum {} +
+
+  # ---------------------------------------------------------------------------
+  # DCO: every commit carries a Signed-off-by trailer, as CONTRIBUTING.md
+  # promises. Plain git over the event's commit range — no marketplace action,
+  # so there is nothing to pin and nothing to compromise. (Same script as
+  # libid-contracts.)
+  # ---------------------------------------------------------------------------
+  dco:
+    name: DCO
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: the PR base and the push's `before` are reachable
+          # only in a complete clone, and the repo is small.
+          fetch-depth: 0
+
+      - name: Every commit is signed off
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            range="$BASE_SHA..$HEAD_SHA"
+          else
+            # Push to main. `before` is all zeros on a branch creation and may
+            # be unreachable after a force push; in either case there is no
+            # honest range, so fall back to the head commit alone rather than
+            # failing on plumbing.
+            zero="0000000000000000000000000000000000000000"
+            if [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "$zero" ] \
+              && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+              range="$PUSH_BEFORE..$PUSH_AFTER"
+            else
+              echo "No usable push range; checking only the head commit."
+              range="$PUSH_AFTER^!"
+            fi
+          fi
+
+          # Merge commits are exempt, as in the standard DCO probot: nobody
+          # authors a merge, and the merged commits are themselves in range.
+          missing=0
+          for sha in $(git rev-list --no-merges "$range"); do
+            if git log -1 --format=%B "$sha" | grep -qiE '^Signed-off-by: .+ <.+>'; then
+              continue
+            fi
+            echo "::error::commit $sha lacks a Signed-off-by trailer (use 'git commit -s')"
+            git log -1 --format='  %h %s (%an)' "$sha"
+            missing=1
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            echo "See CONTRIBUTING.md: every commit must certify the DCO."
+            exit 1
+          fi
+          echo "All commits in $range are signed off."
