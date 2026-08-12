@@ -5,8 +5,8 @@
 // (and the same length) hashes to BOTH attestation commitments, plus a
 // blinder-independent nullifier.
 
-use sha256::sha256_var;
 use keccak256::keccak256;
+use sha256::sha256_var;
 
 /// Blinder size used by tlsn ProxyMode hash commits. The blinder is the
 /// notary-secret-shared 16-byte value appended to the plaintext range
@@ -59,18 +59,15 @@ fn verify_hash_commit<let MAX_PLAIN: u32, let TOTAL: u32>(
 /// `bearer_padded || bearer_len.be_bytes(4)`. Deterministic on the
 /// (bearer, len) pair so the on-chain dedup is one-shot per real OAuth
 /// bearer (combined with the H1 CRLF anchor that canonicalises len).
-fn compute_bearer_nullifier(
-    bearer_padded: [u8; MAX_BEARER_LEN],
-    bearer_len: u32,
-) -> [u8; 32] {
+fn compute_bearer_nullifier(bearer_padded: [u8; MAX_BEARER_LEN], bearer_len: u32) -> [u8; 32] {
     let mut nul_in: [u8; NULLIFIER_INPUT_LEN] = [0; NULLIFIER_INPUT_LEN];
     for i in 0..MAX_BEARER_LEN {
         nul_in[i] = bearer_padded[i];
     }
-    nul_in[MAX_BEARER_LEN]     = ((bearer_len >> 24) & 0xff) as u8;
+    nul_in[MAX_BEARER_LEN] = ((bearer_len >> 24) & 0xff) as u8;
     nul_in[MAX_BEARER_LEN + 1] = ((bearer_len >> 16) & 0xff) as u8;
-    nul_in[MAX_BEARER_LEN + 2] = ((bearer_len >> 8)  & 0xff) as u8;
-    nul_in[MAX_BEARER_LEN + 3] = (bearer_len         & 0xff) as u8;
+    nul_in[MAX_BEARER_LEN + 2] = ((bearer_len >> 8) & 0xff) as u8;
+    nul_in[MAX_BEARER_LEN + 3] = (bearer_len & 0xff) as u8;
     keccak256(nul_in, NULLIFIER_INPUT_LEN)
 }
 
@@ -80,22 +77,27 @@ fn main(
     bearer_len: u32,
     blinder_token: [u8; BLINDER_LEN],
     blinder_me: [u8; BLINDER_LEN],
-
     // --- Public ---
     bearer_hash_token: pub [u8; 32], // SHA256(bearer || blinder_token)
-    bearer_hash_me:    pub [u8; 32], // SHA256(bearer || blinder_me)
-    nullifier:         pub [u8; 32], // keccak256(bearer_padded || len.be32)
-    wallet_address:    pub [u8; 20],
-    session_addr:      pub [u8; 20],
+    bearer_hash_me: pub [u8; 32], // SHA256(bearer || blinder_me)
+    nullifier: pub [u8; 32], // keccak256(bearer_padded || len.be32)
+    wallet_address: pub [u8; 20],
+    session_addr: pub [u8; 20],
 ) {
     // Dual commit binding: same private bearer hashes to BOTH notary
     // commitments. Cross-binds /token and /me on chain without requiring
     // the two TLSN sessions to share a blinder.
     verify_hash_commit::<MAX_BEARER_LEN, BEARER_HASH_INPUT_LEN>(
-        bearer, bearer_len, blinder_token, bearer_hash_token,
+        bearer,
+        bearer_len,
+        blinder_token,
+        bearer_hash_token,
     );
     verify_hash_commit::<MAX_BEARER_LEN, BEARER_HASH_INPUT_LEN>(
-        bearer, bearer_len, blinder_me, bearer_hash_me,
+        bearer,
+        bearer_len,
+        blinder_me,
+        bearer_hash_me,
     );
 
     // Blinder-independent nullifier (deterministic across attempts).
@@ -124,7 +126,9 @@ fn main(
 #[test]
 fn test_nullifier_deterministic() {
     let mut bearer: [u8; MAX_BEARER_LEN] = [0; MAX_BEARER_LEN];
-    bearer[0] = 0x61; bearer[1] = 0x62; bearer[2] = 0x63;
+    bearer[0] = 0x61;
+    bearer[1] = 0x62;
+    bearer[2] = 0x63;
     let n1 = compute_bearer_nullifier(bearer, 3);
     let n2 = compute_bearer_nullifier(bearer, 3);
     for i in 0..32 {
@@ -138,12 +142,16 @@ fn test_nullifier_length_separates() {
     // nullifiers -- otherwise an attacker could claim a shorter bearer to
     // collide nullifiers with a longer one ending in zero bytes.
     let mut bearer: [u8; MAX_BEARER_LEN] = [0; MAX_BEARER_LEN];
-    bearer[0] = 0x61; bearer[1] = 0x62; bearer[2] = 0x63;
+    bearer[0] = 0x61;
+    bearer[1] = 0x62;
+    bearer[2] = 0x63;
     let n3 = compute_bearer_nullifier(bearer, 3);
     let n4 = compute_bearer_nullifier(bearer, 4);
     let mut differs = false;
     for i in 0..32 {
-        if n3[i] != n4[i] { differs = true; }
+        if n3[i] != n4[i] {
+            differs = true;
+        }
     }
     assert(differs, "nullifier did not separate on bearer_len");
 }
@@ -158,7 +166,9 @@ fn test_nullifier_separates_distinct_bearers() {
     let nb = compute_bearer_nullifier(b, 1);
     let mut differs = false;
     for i in 0..32 {
-        if na[i] != nb[i] { differs = true; }
+        if na[i] != nb[i] {
+            differs = true;
+        }
     }
     assert(differs, "nullifier collided across distinct bearers");
 }
@@ -197,7 +207,7 @@ fn test_main_happy_path() {
         bearer[i] = 65; // 'A'
     }
     let blinder_token: [u8; BLINDER_LEN] = [0x42; BLINDER_LEN];
-    let blinder_me:    [u8; BLINDER_LEN] = [0x55; BLINDER_LEN];
+    let blinder_me: [u8; BLINDER_LEN] = [0x55; BLINDER_LEN];
 
     let mut p1: [u8; BEARER_HASH_INPUT_LEN] = [0; BEARER_HASH_INPUT_LEN];
     let mut p2: [u8; BEARER_HASH_INPUT_LEN] = [0; BEARER_HASH_INPUT_LEN];
@@ -212,14 +222,19 @@ fn test_main_happy_path() {
         p2[22 + i] = blinder_me[i];
     }
     let h_token = sha256_var(p1, 22 + BLINDER_LEN);
-    let h_me    = sha256_var(p2, 22 + BLINDER_LEN);
-    let null    = compute_bearer_nullifier(bearer, 22);
+    let h_me = sha256_var(p2, 22 + BLINDER_LEN);
+    let null = compute_bearer_nullifier(bearer, 22);
 
     main(
-        bearer, 22,
-        blinder_token, blinder_me,
-        h_token, h_me, null,
-        [0x11; 20], [0x22; 20],
+        bearer,
+        22,
+        blinder_token,
+        blinder_me,
+        h_token,
+        h_me,
+        null,
+        [0x11; 20],
+        [0x22; 20],
     );
 }
 
@@ -227,7 +242,7 @@ fn test_main_happy_path() {
 fn test_main_bearer_too_short_fails() {
     let bearer: [u8; MAX_BEARER_LEN] = [0; MAX_BEARER_LEN];
     let blinder_token: [u8; BLINDER_LEN] = [0x42; BLINDER_LEN];
-    let blinder_me:    [u8; BLINDER_LEN] = [0x55; BLINDER_LEN];
+    let blinder_me: [u8; BLINDER_LEN] = [0x55; BLINDER_LEN];
     let mut p1: [u8; BEARER_HASH_INPUT_LEN] = [0; BEARER_HASH_INPUT_LEN];
     let mut p2: [u8; BEARER_HASH_INPUT_LEN] = [0; BEARER_HASH_INPUT_LEN];
     for i in 0..BLINDER_LEN {
@@ -235,13 +250,18 @@ fn test_main_bearer_too_short_fails() {
         p2[i] = blinder_me[i];
     }
     let h_token = sha256_var(p1, BLINDER_LEN);
-    let h_me    = sha256_var(p2, BLINDER_LEN);
-    let null    = compute_bearer_nullifier(bearer, 0);
+    let h_me = sha256_var(p2, BLINDER_LEN);
+    let null = compute_bearer_nullifier(bearer, 0);
     main(
-        bearer, 0,
-        blinder_token, blinder_me,
-        h_token, h_me, null,
-        [0x11; 20], [0x22; 20],
+        bearer,
+        0,
+        blinder_token,
+        blinder_me,
+        h_token,
+        h_me,
+        null,
+        [0x11; 20],
+        [0x22; 20],
     );
 }
 
@@ -252,7 +272,7 @@ fn test_main_wrong_bearer_hash_fails() {
         bearer[i] = 65;
     }
     let blinder_token: [u8; BLINDER_LEN] = [0x42; BLINDER_LEN];
-    let blinder_me:    [u8; BLINDER_LEN] = [0x55; BLINDER_LEN];
+    let blinder_me: [u8; BLINDER_LEN] = [0x55; BLINDER_LEN];
     let bad_h_token: [u8; 32] = [0xff; 32];
     let mut p2: [u8; BEARER_HASH_INPUT_LEN] = [0; BEARER_HASH_INPUT_LEN];
     for i in 0..MAX_BEARER_LEN {
@@ -263,13 +283,18 @@ fn test_main_wrong_bearer_hash_fails() {
     for i in 0..BLINDER_LEN {
         p2[22 + i] = blinder_me[i];
     }
-    let h_me   = sha256_var(p2, 22 + BLINDER_LEN);
-    let null   = compute_bearer_nullifier(bearer, 22);
+    let h_me = sha256_var(p2, 22 + BLINDER_LEN);
+    let null = compute_bearer_nullifier(bearer, 22);
     main(
-        bearer, 22,
-        blinder_token, blinder_me,
-        bad_h_token, h_me, null,
-        [0x11; 20], [0x22; 20],
+        bearer,
+        22,
+        blinder_token,
+        blinder_me,
+        bad_h_token,
+        h_me,
+        null,
+        [0x11; 20],
+        [0x22; 20],
     );
 }
 
@@ -281,7 +306,7 @@ fn test_main_nonzero_tail_fails() {
     }
     bearer[50] = 0x99;
     let blinder_token: [u8; BLINDER_LEN] = [0x42; BLINDER_LEN];
-    let blinder_me:    [u8; BLINDER_LEN] = [0x55; BLINDER_LEN];
+    let blinder_me: [u8; BLINDER_LEN] = [0x55; BLINDER_LEN];
     let mut p1: [u8; BEARER_HASH_INPUT_LEN] = [0; BEARER_HASH_INPUT_LEN];
     let mut p2: [u8; BEARER_HASH_INPUT_LEN] = [0; BEARER_HASH_INPUT_LEN];
     for i in 0..22 {
@@ -293,12 +318,17 @@ fn test_main_nonzero_tail_fails() {
         p2[22 + i] = blinder_me[i];
     }
     let h_token = sha256_var(p1, 22 + BLINDER_LEN);
-    let h_me    = sha256_var(p2, 22 + BLINDER_LEN);
-    let null    = compute_bearer_nullifier(bearer, 22);
+    let h_me = sha256_var(p2, 22 + BLINDER_LEN);
+    let null = compute_bearer_nullifier(bearer, 22);
     main(
-        bearer, 22,
-        blinder_token, blinder_me,
-        h_token, h_me, null,
-        [0x11; 20], [0x22; 20],
+        bearer,
+        22,
+        blinder_token,
+        blinder_me,
+        h_token,
+        h_me,
+        null,
+        [0x11; 20],
+        [0x22; 20],
     );
 }

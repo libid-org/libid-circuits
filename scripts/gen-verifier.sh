@@ -29,6 +29,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=../toolchain.env
+# shellcheck disable=SC1091
 source "$ROOT/toolchain.env"
 
 if [[ $# -lt 2 ]]; then

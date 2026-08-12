@@ -8,7 +8,7 @@ use sha256::sha256_var;
 global SIGNING_INPUT_MAX: u32 = 1280;
 global PAYLOAD_JSON_MAX: u32 = 768; // must be divisible by 3 (encoder output size formula).
 global PAYLOAD_B64_MAX: u32 = 1024; // = 4 * (PAYLOAD_JSON_MAX / 3) when divisible by 3
-global EMAIL_MAX: u32 = 62;  // 2 packed Fields x 31 bytes
+global EMAIL_MAX: u32 = 62; // 2 packed Fields x 31 bytes
 global NONCE_MAX: u32 = 62;
 global SUB_MAX: u32 = 31; // 1 packed Field x 31 bytes (Google `sub` is ~21 digits)
 global AUDIENCE_MAX: u32 = 128;
@@ -76,8 +76,7 @@ fn main(
 
     // 2. Verify Google's RSA-2048 PKCS#1 v1.5 SHA-256 signature.
     let params: BigNumParams<NUM_LIMBS, MOD_BITS> = BigNumParams::new(false, modulus, redc);
-    let sig: RuntimeBigNum<NUM_LIMBS, MOD_BITS> =
-        RuntimeBigNum { params, limbs: signature };
+    let sig: RuntimeBigNum<NUM_LIMBS, MOD_BITS> = RuntimeBigNum { params, limbs: signature };
     assert(verify_sha256_pkcs1v15(hash, sig, 65537));
 
     // 3. BIND payload_json to signing_input by re-encoding it to base64url
@@ -162,8 +161,8 @@ fn main(
     //    Pattern bytes: `"email_verified":true`
     //    [34, 101, 109, 97, 105, 108, 95, 118, 101, 114, 105, 102, 105, 101, 100, 34, 58, 116, 114, 117, 101]
     let ev_pattern: [u8; 21] = [
-        34, 101, 109, 97, 105, 108, 95, 118, 101, 114, 105, 102, 105, 101, 100,
-        34, 58, 116, 114, 117, 101,
+        34, 101, 109, 97, 105, 108, 95, 118, 101, 114, 105, 102, 105, 101, 100, 34, 58, 116, 114,
+        117, 101,
     ];
     for i in 0..EMAIL_VERIFIED_LEN {
         assert(payload_json[email_verified_offset + i] == ev_pattern[i]);
@@ -198,11 +197,11 @@ fn main(
     //    Pattern bytes: `"iss":"https://accounts.google.com"` (35 bytes, includes
     //    both opening and closing quotes around the value).
     let iss_pattern: [u8; 35] = [
-        34, 105, 115, 115, 34, 58, 34,                 // "iss":"
-        104, 116, 116, 112, 115, 58, 47, 47,           // https://
-        97, 99, 99, 111, 117, 110, 116, 115, 46,       // accounts.
-        103, 111, 111, 103, 108, 101, 46,              // google.
-        99, 111, 109, 34,                              // com"
+        34, 105, 115, 115, 34, 58, 34, // "iss":"
+        104, 116, 116, 112, 115, 58, 47, 47, // https://
+        97, 99, 99, 111, 117, 110, 116, 115, 46, // accounts.
+        103, 111, 111, 103, 108, 101, 46, // google.
+        99, 111, 109, 34, // com"
     ];
     for i in 0..ISS_PATTERN_LEN {
         assert(payload_json[iss_offset + i] == iss_pattern[i]);
