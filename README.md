@@ -117,11 +117,3 @@ and byte-compares against its committed `Verifier.sol` and
 `XHonkVerifier.sol`. Reproducibility verified 2026-08-12: with the pinned
 toolchain, both committed verifiers reproduce byte-identically from these
 sources (jwt_email vk_hash `0x1a1fad94…d7d6ba08`).
-
-## Historical note (provenance)
-
-The X circuit was published as `dyaka_noir_token` through v0.1.0 — its
-package name in the monorepo it was extracted from — and renamed to
-`x_token` (`circuits/x-token`) afterwards. The rename touches only names,
-paths and comments, never the ACIR bytecode, so the vk and the derived
-`XHonkVerifier.sol` are byte-identical across it.
