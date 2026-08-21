@@ -100,7 +100,7 @@ jobs:
       - name: shellcheck
         run: shellcheck scripts/*.sh
 
-      # jwt_email has no tests and passes vacuously; dyaka_noir_token has 9.
+      # Every circuit carries its own #[test] fns in src/main.nr.
       - name: nargo test
         run: |
           set -euo pipefail
