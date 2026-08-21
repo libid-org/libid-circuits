@@ -114,6 +114,9 @@ the manifest's sha256s, installs the bb version the manifest names,
 regenerates both verifiers from the vks (write_solidity_verifier +
 memory-safe rewrite + `XHonkVerifier` rename), runs `forge fmt` over them,
 and byte-compares against its committed `Verifier.sol` and
-`XHonkVerifier.sol`. Reproducibility verified 2026-08-12: with the pinned
-toolchain, both committed verifiers reproduce byte-identically from these
-sources (jwt_email vk_hash `0x1a1fad94…d7d6ba08`).
+`XHonkVerifier.sol`. Reproducibility verified 2026-08-12 against the sources
+as of that date (jwt_email vk_hash then `0x1a1fad94…d7d6ba08`). The jwt_email
+circuit has since changed — the digest-bound REQ-PLAT-16B public inputs, then
+the REQ-COMMON-19 / REQ-COMMON-19D trailing-structural-byte and canonical-`exp`
+constraints — so the deployed verifier rolls with the next release; current
+sources produce jwt_email vk_hash `0x1596b429…2af7a27c`.
