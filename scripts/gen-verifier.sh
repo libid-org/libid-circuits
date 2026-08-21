@@ -5,7 +5,7 @@
 #   scripts/gen-verifier.sh <circuit> <out.sol> [--contract-name X]
 #
 #   <circuit>          directory name under artifacts/ (e.g. jwt_email,
-#                      dyaka-noir-token)
+#                      x-token)
 #   <out.sol>          output path for the Solidity source
 #   --contract-name X  rename the concrete verifier contract from bb's fixed
 #                      `HonkVerifier` to X (e.g. XHonkVerifier — needed when a

@@ -1,7 +1,7 @@
 [package]
-name = "dyaka_noir_token"
+name = "x_token"
 type = "bin"
-authors = ["Dyaka"]
+authors = ["libid"]
 compiler_version = ">=1.0.0"
 
 [dependencies]
