@@ -13,12 +13,12 @@ release workflow under the pinned toolchain.
 | Circuit | Package | Proves |
 |---|---|---|
 | `circuits/jwt_email` | `jwt_email` | Possession of a Google OIDC JWT: verifies the RSA signature over the JWT and exposes the claims the login registry needs, without revealing the token. Source of the `HonkVerifier` in libid-contracts `solidity/contracts/login/oidc/Verifier.sol`. |
-| `circuits/dyaka-noir-token` | `dyaka_noir_token` | An X (Twitter) OAuth bearer token binds two TLSN hash commitments: the same private bearer SHA-256-hashes to both notary commitments (`/token` and `/me`), plus a blinder-independent keccak nullifier for one-shot on-chain dedup per real bearer. Source of the `XHonkVerifier` in libid-contracts `solidity/contracts/login/zk/XHonkVerifier.sol`. |
+| `circuits/x-token` | `x_token` | An X (Twitter) OAuth bearer token binds two TLSN hash commitments: the same private bearer SHA-256-hashes to both notary commitments (`/token` and `/me`), plus a blinder-independent keccak nullifier for one-shot on-chain dedup per real bearer. Source of the `XHonkVerifier` in libid-contracts `solidity/contracts/login/zk/XHonkVerifier.sol`. |
 
-Sources are byte-verbatim copies of the circuits extracted from the original
-dyaka monorepo (and are therefore not `nargo fmt`-clean; reformatting was
-verified to leave the compiled bytecode identical, but is deferred to a
-deliberate future change so provenance stays byte-checkable).
+Sources were extracted byte-verbatim from the original monorepo and then
+formatted once with `nargo fmt` (verified to leave the vk byte-identical;
+only debug metadata in the ACIR json moves); CI enforces `nargo fmt --check`
+from there on.
 
 ## Toolchain
 
@@ -82,7 +82,7 @@ local build from the same sources.
 
 ```sh
 scripts/gen-verifier.sh jwt_email Verifier.sol
-scripts/gen-verifier.sh dyaka-noir-token XHonkVerifier.sol --contract-name XHonkVerifier
+scripts/gen-verifier.sh x-token XHonkVerifier.sol --contract-name XHonkVerifier
 ```
 
 This runs `bb write_solidity_verifier` on the locally built vk (run
@@ -120,18 +120,8 @@ sources (jwt_email vk_hash `0x1a1fad94…d7d6ba08`).
 
 ## Historical note (provenance)
 
-For anyone auditing the extraction from the dyaka monorepo:
-
-- A `dyaka-noir-x-circuit` is referenced in old dyaka documentation but
-  **never existed in git** — it is a phantom name. The X login circuit has
-  always been `dyaka_noir_token` (this repo's `circuits/dyaka-noir-token`).
-- `XHonkVerifier.sol` derives from `dyaka_noir_token`'s vk; the `X` prefix is
-  only the collision-avoiding contract rename described above, not a
-  different circuit.
-- A `dyaka-noir-shared` library once existed and was inlined into the circuit
-  sources before extraction; there is no shared package to look for.
-- dyaka's tracked `web/public/circuit/dyaka_noir_token.json` was compiled on
-  a developer machine: its `bytecode`, `abi`, `debug_symbols` and `hash`
-  fields are identical to a fresh pinned-toolchain compile, and only the
-  absolute paths in `file_map` differ — the motivation for the path
-  normalization in `scripts/build.sh`.
+The X circuit was published as `dyaka_noir_token` through v0.1.0 — its
+package name in the monorepo it was extracted from — and renamed to
+`x_token` (`circuits/x-token`) afterwards. The rename touches only names,
+paths and comments, never the ACIR bytecode, so the vk and the derived
+`XHonkVerifier.sol` are byte-identical across it.

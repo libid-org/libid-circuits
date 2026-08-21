@@ -1,4 +1,4 @@
-// Dyaka X Token-Only Circuit (dual blinder)
+// X token-only circuit (dual blinder)
 //
 // Two TLSN sessions (/token + /me) each commit the bearer with their OWN
 // blinder. The circuit binds them by proving that the same private bearer
